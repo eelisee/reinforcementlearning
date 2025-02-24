@@ -97,19 +97,27 @@ def run_simulation(n_runs=1000, time_horizon=10000, exploration_rounds=100):
     arm_selection_counts = np.zeros((n_runs, num_arms, time_horizon))
     
     for run in range(n_runs):
+        print(f"Starting run {run + 1}/{n_runs}")
         bandit = StochasticBandit(num_arms=num_arms, bandit_type="gaussian")
         etc = ETCAlgorithm(bandit, exploration_rounds)
         best_arm = np.argmax(bandit.get_means())
         
         for t in range(time_horizon):
+            if t % 1000 == 0:
+                print(f"Run {run + 1}/{n_runs}, Time step {t}/{time_horizon}")
             chosen_arm, reward = etc.step()
+            if np.sum(arm_selection_counts[run]) == 0:
+                arm_selection_probs = np.zeros_like(arm_selection_counts)
+            else:
+                arm_selection_probs = arm_selection_counts / np.sum(arm_selection_counts, axis=1, keepdims=True)
             regrets[run, t] = np.max(bandit.get_means()) - bandit.get_means()[chosen_arm]
             correct_action_rates[run, t] = (chosen_arm == best_arm)
             arm_selection_counts[run, chosen_arm, t] += 1
+            arm_selection_probs = arm_selection_counts / np.sum(arm_selection_counts, axis=1, keepdims=True)
     
-    return regrets.mean(axis=0), correct_action_rates.mean(axis=0), arm_selection_counts.mean(axis=0)
+    return regrets.mean(axis=0), correct_action_rates.mean(axis=0), arm_selection_counts.mean(axis=0), arm_selection_probs.mean(axis=0), bandit.get_means()
 
-def plot_results(regret, correct_action_rate, arm_selection_probs):
+def plot_results(regret, correct_action_rate, arm_selection_counts, arm_selection_probs, bandit_means):
     plt.figure(figsize=(12, 8))
     
     # Regret over time
@@ -125,6 +133,17 @@ def plot_results(regret, correct_action_rate, arm_selection_probs):
     plt.xlabel("Time step")
     plt.ylabel("Correct Action Rate")
     plt.title("Correct Action Rate over time")
+
+    # Estimated means vs actual means over time
+    plt.subplot(2, 2, 4)
+    for arm in range(arm_selection_probs.shape[0]):
+        plt.plot(np.cumsum(arm_selection_counts[:, arm], axis=1) / (np.arange(1, arm_selection_probs.shape[1] + 1)), label=f"Estimated Mean Arm {arm}")
+    for arm in range(arm_selection_probs.shape[0]):
+        plt.axhline(y=bandit_means[arm], linestyle='--', label=f"Actual Mean Arm {arm}")
+    plt.xlabel("Time step")
+    plt.ylabel("Mean Estimate")
+    plt.title("Estimated Means vs Actual Means")
+    plt.legend()
     
     # Arm selection probabilities over time
     plt.subplot(2, 2, 3)
@@ -139,5 +158,5 @@ def plot_results(regret, correct_action_rate, arm_selection_probs):
     plt.show()
 
 if __name__ == "__main__":
-    regret, correct_action_rate, arm_selection_probs = run_simulation()
-    plot_results(regret, correct_action_rate, arm_selection_probs)
+    regret, correct_action_rate, arm_selection_counts, arm_selection_probs, bandit_means = run_simulation()
+    plot_results(regret, correct_action_rate, arm_selection_counts, arm_selection_probs, bandit_means)
