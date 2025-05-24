@@ -1,0 +1,46 @@
+# models/sota/ars_wrapper.py
+
+from sb3_contrib import ARS
+from stable_baselines3.common.callbacks import EvalCallback
+from utils.env_utils import make_env
+from utils.logger import save_results, save_reward_curve_as_csv
+import numpy as np
+import os
+
+def train(config):
+    all_returns = []
+    num_seeds = len(config['seeds'])
+
+    for idx, seed in enumerate(config['seeds']):
+        env = make_env(config['env'], seed)
+        model = ARS('MlpPolicy', env, seed=seed, verbose=0)
+
+        eval_callback = EvalCallback(
+            env,
+            best_model_save_path=f"evaluation_study/logs/{config['env']}_ARS_{seed}/",
+            log_path=f"evaluation_study/logs/{config['env']}_ARS_{seed}/",
+            eval_freq=100,
+            deterministic=True,
+            render=False
+        )
+
+        model.learn(total_timesteps=config['timesteps'], callback=eval_callback)
+
+        # eval_callback schreibt in log_path/evaluations.npz
+        eval_npz_path = os.path.join(f"evaluation_study/logs/{config['env']}_ARS_{seed}", "evaluations.npz")
+        if os.path.exists(eval_npz_path):
+            data = np.load(eval_npz_path)
+            timesteps = data['timesteps']
+            rewards = data['results']
+            if rewards.ndim > 1:
+                rewards = np.mean(rewards, axis=1)  # Mittelwert falls mehrere Episoden pro eval
+            save_reward_curve_as_csv(config['env'], "ars", seed, timesteps, rewards)
+        else:
+            print(f"[Warning] evaluations.npz nicht gefunden unter {eval_npz_path}")
+
+        # Für Summary speichern wir nur den Mittelwert der letzten Evaluation als Return
+        last_mean_return = np.mean(rewards[-config.get('eval_episodes', 10):]) if len(rewards) >= config.get('eval_episodes', 10) else np.mean(rewards)
+        all_returns.append(last_mean_return)
+
+    save_results(config['env'], 'ars', all_returns)
+    print("Training complete.")
