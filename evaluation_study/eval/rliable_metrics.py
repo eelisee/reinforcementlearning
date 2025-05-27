@@ -1,217 +1,179 @@
-# import os
-# import numpy as np
-# import pandas as pd
-# import matplotlib.pyplot as plt
-# from scipy.interpolate import interp1d
-# import metrics, library
-# #from library import StratifiedBootstrap, StratifiedIndependentBootstrap, get_interval_estimates, run_score_deviation, mean_score_deviation, create_performance_profile
-# #from metrics import aggregate_mean, aggregate_median, aggregate_optimality_gap, aggregate_iqm, probability_of_improvement
-# #from plot_utils import _non_linear_scaling, _decorate_axis, _annotate_and_decorate_axis, plot_performance_profiles, plot_interval_estimates, plot_sample_efficiency_curve, plot_probability_of_improvement
-
-# from aggregate_metrics import aggregate_reward_curves
-
-
-# def interpolate_rewards(df, timesteps=np.arange(1, 50001)):
-#     """
-#     Interpoliert Rewards für jeden (env, algorithm, seed)-Triplet auf die gewünschten Timesteps.
-#     """
-#     records = []
-#     grouped = df.groupby(["env", "algorithm", "seed"])
-
-#     for (env, algo, seed), group in grouped:
-#         f = interp1d(group["timesteps"], group["rewards"], bounds_error=False, fill_value="extrapolate")
-#         rewards_interp = f(timesteps)
-
-#         temp_df = pd.DataFrame({
-#             "timesteps": timesteps,
-#             "rewards": rewards_interp,
-#             "env": env,
-#             "algorithm": algo,
-#             "seed": seed,
-#         })
-#         records.append(temp_df)
-
-#     return pd.concat(records, ignore_index=True)
-
-
-# def prepare_rliable_data(df_interp, final_timestep=50000):
-#     """
-#     Wandelt den DataFrame in das Format für rliable um:
-#     - pro Environment: dict algorithm -> np.array(n_seeds)
-#     """
-#     results = {}
-#     envs = df_interp["env"].unique()
-#     for env in envs:
-#         env_df = df_interp[df_interp["env"] == env]
-#         algorithms = env_df["algorithm"].unique()
-#         algo_results = {}
-
-#         for algo in algorithms:
-#             # Werte des letzten Zeitschritts für alle Seeds
-#             seeds = env_df[env_df["algorithm"] == algo]["seed"].unique()
-#             seed_rewards = []
-#             for seed in seeds:
-#                 rewards = env_df[
-#                     (env_df["algorithm"] == algo) &
-#                     (env_df["seed"] == seed) &
-#                     (env_df["timesteps"] == final_timestep)
-#                 ]["rewards"].values
-#                 if rewards.size == 1:
-#                     seed_rewards.append(rewards[0])
-#                 else:
-#                     # Falls der exakte Timestep nicht da ist, fallback
-#                     # z.B. Mittelwert der nahesten 2 Punkte
-#                     subset = env_df[
-#                         (env_df["algorithm"] == algo) &
-#                         (env_df["seed"] == seed)
-#                     ].sort_values("timesteps")
-#                     seed_rewards.append(subset["rewards"].iloc[-1])  # fallback letzter Wert
-
-#             algo_results[algo] = np.array(seed_rewards)
-#         results[env] = algo_results
-
-#     return results
-
-
-
-# # Angepasste Importe – gehen davon aus, dass du ein Package draus machst.
-
-
-# # # Basispfad zu den Daten
-# # BASE_PATH = os.path.join(os.path.dirname(__file__), '..', 'data')
-
-# # # Beispielhafte Ladefunktion – hier müsste dein konkreter Ladeprozess stehen
-# # def load_scores(file_path):
-# #     """Lädt Scores im npy-Format."""
-# #     return np.load(file_path)  # shape: (num_runs, num_tasks)
-
-# # # Lade deine Daten
-# # def load_all_scores():
-# #     return {
-# #         'MethodA': load_scores(os.path.join(BASE_PATH, 'method_a.npy')),
-# #         'MethodB': load_scores(os.path.join(BASE_PATH, 'method_b.npy')),
-# #     }
-
-# # Main Evaluation
-# def main():
-#     scores = load_all_scores()
-
-#     # Interquartilsmittel
-#     iqm_func = lambda x: np.array([metrics.aggregate_iqm(x)])
-#     iqm_estimates, iqm_cis = library.get_interval_estimates(
-#         scores,
-#         func=iqm_func,
-#         method='percentile',
-#         reps=5000,
-#         confidence_interval_size=0.95,
-#         task_bootstrap=False
-#     )
-
-#     print("Interquartilsmittel mit 95%-Konfidenzintervallen:")
-#     for method, val in iqm_estimates.items():
-#         ci = iqm_cis[method]
-#         print(f"{method}: {val[0]:.3f} (CI: {ci[0][0]:.3f} – {ci[1][0]:.3f})")
-
-#     # Probability of Improvement
-#     prob_func = lambda x, y: np.array([metrics.probability_of_improvement(x, y)])
-#     prob_estimates, prob_cis = library.get_interval_estimates(
-#         {'MethodA_vs_B': [scores['MethodA'], scores['MethodB']]},
-#         func=prob_func,
-#         method='percentile',
-#         reps=5000,
-#         confidence_interval_size=0.95,
-#     )
-
-#     prob = prob_estimates['MethodA_vs_B'][0]
-#     ci = prob_cis['MethodA_vs_B']
-#     print(f"\nWahrscheinlichkeit, dass A besser ist als B: {prob:.3f} (CI: {ci[0][0]:.3f} – {ci[1][0]:.3f})")
-
-# if __name__ == "__main__":
-#     main()
-
 import os
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from aggregate_metrics import aggregate_reward_curves
 
-# Lokale Imports
-import aggregate_metrics, metrics, library
+sns.set(style="whitegrid")
 
-# Basispfad – zeigt auf "evaluation_study/data"
-BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
+TARGET_TIMESTEP = 50000
+N_BOOTSTRAP_SAMPLES = 1000
+ALPHA = 0.95
 
-# Die Environments (optional, falls du gezielt nur diese auswerten willst)
-ENVS = [
-    "Acrobot-v1",
-    "CartPole-v1",
-    "MountainCarContinuous-v0",
-    "Pendulum-v1",
-    "Taxi-v3",
-]
 
-def prepare_score_dict(df, envs):
-    """Wandelt aggregierte DataFrame in ein Score-Dict pro Methode."""
-    score_dict = {}
+def interpolate_reward(df, target_step):
+    steps = df['timesteps'].values
+    rewards = df['rewards'].values
+    if len(steps) == 0:
+        return np.nan
+    if target_step in steps:
+        return df[df['timesteps'] == target_step]['rewards'].values[0]
+    elif target_step < steps[0] or target_step > steps[-1]:
+        return np.nan
+    else:
+        return np.interp(target_step, steps, rewards)
 
-    for algo in df["algorithm"].unique():
-        algo_scores = []
 
-        for env in envs:
-            subset = df[(df["algorithm"] == algo) & (df["env"] == env)]
+def extract_final_rewards_per_env(df_all, timestep=TARGET_TIMESTEP):
+    per_env_data = {}
 
-            if subset.empty:
-                continue
+    grouped = df_all.groupby(["env", "algorithm", "seed"])
 
-            # Nehme den letzten Eintrag aus jeder Reward-Curve pro Seed
-            scores = subset.groupby("seed")["rewards"].last().values
-            algo_scores.append(scores)
+    for (env, algo, seed), group in grouped:
+        reward = interpolate_reward(group, timestep)
+        if np.isnan(reward):
+            print(f"SKIPPED: {env} - {algo} - seed {seed} (timestep range: {group['timesteps'].min()} to {group['timesteps'].max()})")
+            continue
 
-        # [num_runs, num_tasks] – transpose, damit Tasks = Envs
-        if algo_scores:
-            stacked = np.vstack(algo_scores).T  # shape: (num_runs, num_tasks)
-            score_dict[algo] = stacked
+        if env not in per_env_data:
+            per_env_data[env] = {}
+        if algo not in per_env_data[env]:
+            per_env_data[env][algo] = []
 
-    return score_dict
+        per_env_data[env][algo].append(reward)
+
+    return per_env_data
+
+
+def compute_iqm(scores):
+    sorted_scores = np.sort(scores)
+    q25, q75 = np.percentile(sorted_scores, [25, 75])
+    iqm_scores = sorted_scores[(sorted_scores >= q25) & (sorted_scores <= q75)]
+    return np.mean(iqm_scores) if len(iqm_scores) > 0 else np.nan
+
+
+def bootstrap_interval_estimates(data, metric="iqm", num_bootstrap_samples=1000, confidence_level=0.95):
+    rng = np.random.default_rng()
+    estimates = {}
+
+    for algo, scores in data.items():
+        if len(scores) < 2:
+            continue
+
+        boot_samples = []
+        scores = np.array(scores)
+        for _ in range(num_bootstrap_samples):
+            sample = rng.choice(scores, size=len(scores), replace=True)
+            if metric == "iqm":
+                boot_val = compute_iqm(sample)
+            else:
+                raise ValueError("Unsupported metric")
+            boot_samples.append(boot_val)
+
+        boot_samples = np.array(boot_samples)
+        lower = np.percentile(boot_samples, (1 - confidence_level) / 2 * 100)
+        upper = np.percentile(boot_samples, (1 + confidence_level) / 2 * 100)
+        median = np.median(boot_samples)
+        estimates[algo] = (median, lower, upper)
+
+    return estimates
+
+
+def plot_interval_estimates(iqm_dict, ylabel="IQM", xlabel="Algorithm", title=None):
+    if len(iqm_dict) < 2:
+        return None, None
+
+    algos = list(iqm_dict.keys())
+    medians = [iqm_dict[a][0] for a in algos]
+    lowers = [iqm_dict[a][1] for a in algos]
+    uppers = [iqm_dict[a][2] for a in algos]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.errorbar(algos, medians,
+                yerr=[np.subtract(medians, lowers), np.subtract(uppers, medians)],
+                fmt='o', capsize=5, elinewidth=2, markeredgewidth=2)
+
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel)
+    ax.set_title(title if title else f"{ylabel} with Confidence Intervals")
+
+    for label in ax.get_xticklabels():
+        label.set_rotation(45)
+        label.set_ha('right')
+
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_performance_profiles(data, title="Performance Profiles"):
+    # Filter Algos with at least 1 score
+    valid_data = {k: np.array(v) for k, v in data.items() if len(v) > 0}
+    if len(valid_data) < 2:
+        return None, None
+
+    # Global normalization
+    all_scores = np.concatenate(list(valid_data.values()))
+    max_score = np.max(all_scores)
+    epsilon = 1e-8
+    normalized = {k: v / (max_score + epsilon) for k, v in valid_data.items()}
+
+    taus = np.linspace(0, 1, 100)
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for algo, scores in normalized.items():
+        profile = [np.mean(scores >= tau) for tau in taus]
+        ax.plot(taus, profile, label=algo)
+
+    ax.set_xlabel("Normalized Score Threshold (τ)")
+    ax.set_ylabel("Fraction of Runs ≥ τ")
+    ax.set_title(title)
+    ax.legend()
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_all_envs_ci(per_env_rewards, output_path):
+    for env, rewards in per_env_rewards.items():
+        ci_iqm = bootstrap_interval_estimates(rewards, metric="iqm",
+                                              num_bootstrap_samples=N_BOOTSTRAP_SAMPLES,
+                                              confidence_level=ALPHA)
+        if not ci_iqm:
+            continue
+        fig, ax = plot_interval_estimates(ci_iqm, ylabel="IQM", xlabel="Algorithm",
+                                          title=f"95% CI of IQM - {env}")
+        if fig:
+            fig.savefig(os.path.join(output_path, f"{env}_ci_iqm.png"))
+            plt.close(fig)
+
+
+def plot_all_envs_performance_profiles(per_env_rewards, output_path):
+    for env, rewards in per_env_rewards.items():
+        fig, ax = plot_performance_profiles(rewards, title=f"Performance Profiles - {env}")
+        if fig:
+            fig.savefig(os.path.join(output_path, f"{env}_performance_profile.png"))
+            plt.close(fig)
+
 
 def main():
-    # Schritt 1: Rewards aggregieren
-    df = aggregate_metrics.aggregate_reward_curves(BASE_PATH)
+    base_path = "evaluation_study/data"
+    output_path = "evaluation_study/plots"
+    os.makedirs(output_path, exist_ok=True)
 
-    # Schritt 2: In Score-Format überführen
-    scores = prepare_score_dict(df, ENVS)
+    print("Lade aggregierte Rewards...")
+    df_all = aggregate_reward_curves(base_path)
 
-    # Schritt 3: IQM berechnen
-    iqm_func = lambda x: np.array([metrics.aggregate_iqm(x)])
-    iqm_estimates, iqm_cis = library.get_interval_estimates(
-        scores,
-        func=iqm_func,
-        method='percentile',
-        reps=5000,
-        confidence_interval_size=0.95,
-        task_bootstrap=False
-    )
+    print("Extrahiere Rewards pro Environment...")
+    per_env_rewards = extract_final_rewards_per_env(df_all)
 
-    print("\n Interquartilsmittel (IQM) mit 95%-Konfidenzintervall:")
-    for method, val in iqm_estimates.items():
-        ci = iqm_cis[method]
-        print(f"{method}: {val[0]:.3f} (CI: {ci[0][0]:.3f} – {ci[1][0]:.3f})")
+    print("Plotte CI-IQM Plots...")
+    plot_all_envs_ci(per_env_rewards, output_path)
 
-    # Schritt 4: Wahrscheinlichkeit der Verbesserung (A vs. B)
-    methods = list(scores.keys())
-    if len(methods) >= 2:
-        a, b = methods[0], methods[1]
+    print("Plotte Performance Profile Plots...")
+    plot_all_envs_performance_profiles(per_env_rewards, output_path)
 
-        prob_func = lambda x, y: np.array([metrics.probability_of_improvement(x, y)])
-        prob_estimates, prob_cis = library.get_interval_estimates(
-            {f'{a}_vs_{b}': [scores[a], scores[b]]},
-            func=prob_func,
-            method='percentile',
-            reps=5000,
-            confidence_interval_size=0.95,
-        )
+    print("Fertig! Plots gespeichert in:", output_path)
 
-        prob = prob_estimates[f'{a}_vs_{b}'][0]
-        ci = prob_cis[f'{a}_vs_{b}']
-        print(f"\n🔀 Wahrscheinlichkeit, dass {a} besser ist als {b}: {prob:.3f} (CI: {ci[0][0]:.3f} – {ci[1][0]:.3f})")
 
 if __name__ == "__main__":
     main()

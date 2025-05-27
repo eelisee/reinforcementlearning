@@ -11,8 +11,8 @@ CONTINUOUS_ALGOS = {"ddpg", "sac", "td3", "tqc"}
 
 # Hilfsfunktion, um zu bestimmen, ob eine Umgebung diskret ist
 # (hier hardcoded, kann erweitert oder aus Gym abgefragt werden)
-DISCRETE_ENVS = {"CartPole-v1"} #, "Acrobot-v1", "MountainCar-v0"}
-CONTINUOUS_ENVS = {"Pendulum-v1"} #, "MountainCarContinuous-v0", "LunarLanderContinuous-v2"}
+DISCRETE_ENVS = {"CartPole-v1", "Acrobot-v1", "Taxi-v3"}#, "MountainCar-v0"}
+CONTINUOUS_ENVS = {"Pendulum-v1", "MountainCarContinuous-v0"}#, "LunarLanderContinuous-v2"}
 
 def load_all_configs():
     base_dir = os.path.dirname(os.path.abspath(__file__))  # Pfad zu utils/
@@ -53,7 +53,7 @@ def load_all_configs():
                         "batch_size": data.get("batch_size", 64),
                         "eval_episodes": data.get("eval_episodes", 5),
                         "eval_freq": data.get("eval_freq", 1000),  # Optional, falls nicht angegeben
-                        "seeds": data.get("seeds", [0]),  # , 1, 2, 3, 4]),
+                        "seeds": data.get("seeds", [0 , 1]),#, 2, 3, 4]),
                     }
                     configs.append(config)
     return configs
